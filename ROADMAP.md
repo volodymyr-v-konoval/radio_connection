@@ -52,17 +52,27 @@ Not run in the host environment:
 
 ## Stage 4 — STM32F407 board port
 
-Status: next
+Status: in progress
 
-Tasks:
+Implemented (Stage 4A):
 
-- add STM32F4 HAL backend
-- create STM32F407VET6 CubeMX/CubeIDE firmware project
-- select board UART pins, DMA stream/channel, and IRQ
-- maintain monotonic DMA producer count
-- connect HAL tick to `stm32_time`
-- connect UART/SWO/RTT sink to `stm32_logger`
-- run a bare-metal receiver processing loop
+- STM32F4 HAL Receive-to-IDLE circular-DMA backend
+- monotonic producer count with DMA-wrap handling
+- deferred UART error recovery outside ISR context
+- HAL tick and UART debug logger backends
+- FK407M3-VET6 V1.1 board policy and UART/DMA validation
+- STM32F407 application composition root
+- host HAL stubs and deterministic backend tests
+- automated radio-core dependency-boundary test
+
+Remaining (Stage 4B):
+
+- generate the STM32CubeIDE project for STM32F407VET6
+- add generated `Core/` and `Drivers/` integration
+- build with `arm-none-eabi-gcc`
+- flash through ST-LINK
+- verify USART1 logs and USART2 DMA bytes on hardware
+- run the bare-metal receiver processing loop on the board
 
 ## Stage 5 — RadioMaster RP2 V2 CRSF integration
 

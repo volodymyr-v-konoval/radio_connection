@@ -16,7 +16,10 @@ set(RADIO_INCLUDE_DIRS
     src/radio/service
     src/platform/pc
     src/platform/stm32
+    src/platform/stm32/f4
     src/radio/protocol/crsf
+    firmware/stm32f407/board
+    firmware/stm32f407/app
 )
 
 set(RADIO_WARNING_FLAGS
@@ -118,3 +121,84 @@ add_test(NAME crsf_protocol_tests COMMAND test_crsf)
 add_test(NAME rc_service_crsf_tests COMMAND test_rc_service_crsf)
 add_test(NAME stm32_adapter_tests COMMAND test_stm32_adapters)
 add_test(NAME rc_service_stm32_dma_tests COMMAND test_rc_service_stm32_dma)
+
+
+# STM32F4 HAL-dependent code is compiled on the host only against test stubs.
+add_library(fake_stm32f4_hal STATIC
+    tests/support/fake_stm32f4_hal.c
+)
+
+target_include_directories(fake_stm32f4_hal PUBLIC
+    tests/stubs
+    tests/support
+)
+target_compile_options(fake_stm32f4_hal PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_library(platform_stm32f4_backend_host STATIC
+    src/platform/stm32/f4/stm32f4_uart_dma_backend.c
+    src/platform/stm32/f4/stm32f4_uart_logger_backend.c
+    src/platform/stm32/f4/stm32f4_time_backend.c
+)
+
+target_include_directories(platform_stm32f4_backend_host PUBLIC
+    tests/stubs
+    ${RADIO_INCLUDE_DIRS}
+)
+target_link_libraries(platform_stm32f4_backend_host PUBLIC fake_stm32f4_hal)
+target_compile_options(platform_stm32f4_backend_host PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_library(stm32f407_radio_port_host STATIC
+    firmware/stm32f407/board/fk407m3_vet6_v1_1_radio.c
+    firmware/stm32f407/app/radio_composition.c
+)
+
+target_include_directories(stm32f407_radio_port_host PUBLIC
+    tests/stubs
+    ${RADIO_INCLUDE_DIRS}
+)
+target_link_libraries(stm32f407_radio_port_host PUBLIC
+    radio_core
+    radio_crsf
+    platform_stm32_adapters
+    platform_stm32f4_backend_host
+)
+target_compile_options(stm32f407_radio_port_host PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_stm32f4_backend
+    tests/test_stm32f4_backend.c
+)
+
+target_include_directories(test_stm32f4_backend PRIVATE
+    tests/stubs
+    tests/support
+    ${RADIO_INCLUDE_DIRS}
+)
+target_link_libraries(test_stm32f4_backend PRIVATE
+    platform_stm32f4_backend_host
+    fake_stm32f4_hal
+)
+target_compile_options(test_stm32f4_backend PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_stm32f407_composition
+    tests/test_stm32f407_composition.c
+)
+
+target_include_directories(test_stm32f407_composition PRIVATE
+    tests/stubs
+    tests/support
+    ${RADIO_INCLUDE_DIRS}
+)
+target_link_libraries(test_stm32f407_composition PRIVATE
+    stm32f407_radio_port_host
+    fake_stm32f4_hal
+)
+target_compile_options(test_stm32f407_composition PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_test(NAME stm32f4_backend_tests COMMAND test_stm32f4_backend)
+add_test(NAME stm32f407_composition_tests COMMAND test_stm32f407_composition)
+add_test(
+    NAME architecture_dependency_test
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_architecture.cmake
+)
