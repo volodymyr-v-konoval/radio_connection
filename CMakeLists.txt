@@ -11,6 +11,7 @@ enable_testing()
 set(RADIO_INCLUDE_DIRS
     src
     src/radio/common
+    src/radio/mapping
     src/radio/protocol
     src/radio/port
     src/radio/service
@@ -32,6 +33,7 @@ set(RADIO_WARNING_FLAGS
 
 add_library(radio_core STATIC
     src/radio/service/rc_receiver_service.c
+    src/radio/mapping/rc_channel_mapper.c
 )
 
 target_include_directories(radio_core PUBLIC ${RADIO_INCLUDE_DIRS})
@@ -73,6 +75,18 @@ target_include_directories(test_support PUBLIC
     ${RADIO_INCLUDE_DIRS}
 )
 target_compile_options(test_support PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_rc_channel_mapper
+    tests/test_rc_channel_mapper.c
+)
+
+target_link_libraries(test_rc_channel_mapper PRIVATE
+    radio_core
+)
+
+target_compile_options(test_rc_channel_mapper PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
 
 add_executable(test_crsf
     tests/test_crsf.c
@@ -116,6 +130,11 @@ target_link_libraries(test_rc_service_stm32_dma PRIVATE
 )
 
 target_compile_options(test_rc_service_stm32_dma PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_test(
+    NAME rc_channel_mapper_tests
+    COMMAND test_rc_channel_mapper
+)
 
 add_test(NAME crsf_protocol_tests COMMAND test_crsf)
 add_test(NAME rc_service_crsf_tests COMMAND test_rc_service_crsf)
