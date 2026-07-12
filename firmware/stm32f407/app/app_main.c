@@ -4,6 +4,7 @@
 #include "fk407m3_vet6_v1_1_radio.h"
 #include "main.h"
 #include "radio_composition.h"
+#include "radio_control_profile.h"
 #include "usart.h"
 
 #include <stdbool.h>
@@ -21,6 +22,7 @@ static uint8_t s_crsf_dma_buffer[
 ];
 
 static Stm32f407RadioComposition s_radio;
+static RcChannelMapper s_channel_mapper;
 
 static bool s_initialized = false;
 static bool s_link_seen = false;
@@ -32,6 +34,7 @@ static void app_log(const char *format, ...);
 static void app_report_link_transition(void);
 static void app_report_status(uint32_t now_ms);
 static void app_report_channels(const RcInputFrame *frame);
+static void app_report_mapped_controls(const RcInputFrame *frame);
 
 static void app_log(
     const char *format,
@@ -78,7 +81,7 @@ void app_main_init(void)
 {
     app_log("\r\n");
     app_log(
-        "[BOOT] radio_connection STM32F407 Stage 5\r\n"
+        "[BOOT] radio_connection STM32F407 Stage 7\r\n"
     );
 
     const uint32_t validation_errors =
@@ -125,6 +128,21 @@ void app_main_init(void)
         Error_Handler();
     }
 
+    if (!radio_control_profile_init(
+          &s_channel_mapper)) {
+        app_log(
+            "[MAP] radio control profile initialization FAILED\r\n"
+        );
+    
+        Error_Handler();
+    }
+
+    app_log(
+        "[MAP] profile ready: "
+        "CH1=roll CH2=pitch CH3=throttle "
+        "CH4=yaw CH7=mode CH8=arm\r\n"
+    );
+
     s_initialized = true;
     s_link_seen = false;
     s_previous_failsafe =
@@ -139,7 +157,7 @@ void app_main_init(void)
         "[CRSF] waiting for RadioMaster RP2 V2 frames\r\n"
     );
     app_log(
-        "[BOOT] Stage 5 initialization complete\r\n"
+        "[BOOT] Stage 7 initialization complete\r\n"
     );
 }
 
@@ -280,6 +298,112 @@ static void app_report_status(
     }
 
     app_report_channels(&frame);
+
+    app_report_mapped_controls(&frame);
+}
+
+static void app_report_mapped_controls(
+    const RcInputFrame *frame
+)
+{
+    if (frame == NULL) {
+        return;
+    }
+
+    RcMappedInput mapped = { 0 };
+
+    if (!rc_channel_mapper_map(
+            &s_channel_mapper,
+            frame,
+            &mapped)) {
+        app_log(
+            "[MAP] control values unavailable\r\n"
+        );
+
+        return;
+    }
+
+    int16_t roll = 0;
+    int16_t pitch = 0;
+    int16_t throttle = 0;
+    int16_t yaw = 0;
+    int16_t mode = 0;
+    int16_t arm = 0;
+
+    uint16_t roll_us = 0U;
+    uint16_t pitch_us = 0U;
+    uint16_t throttle_us = 0U;
+    uint16_t yaw_us = 0U;
+    uint16_t mode_us = 0U;
+    uint16_t arm_us = 0U;
+
+    const bool profile_complete =
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_ROLL,
+            &roll,
+            &roll_us
+        ) &&
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_PITCH,
+            &pitch,
+            &pitch_us
+        ) &&
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_THROTTLE,
+            &throttle,
+            &throttle_us
+        ) &&
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_YAW,
+            &yaw,
+            &yaw_us
+        ) &&
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_MODE,
+            &mode,
+            &mode_us
+        ) &&
+        rc_mapped_input_get(
+            &mapped,
+            RC_FUNCTION_ARM,
+            &arm,
+            &arm_us
+        );
+
+    if (!profile_complete) {
+        app_log(
+            "[MAP] mapped profile is incomplete\r\n"
+        );
+
+        return;
+    }
+
+    app_log(
+        "[MAP] norm roll=%d pitch=%d throttle=%d "
+        "yaw=%d mode=%d arm=%d\r\n",
+        (int)roll,
+        (int)pitch,
+        (int)throttle,
+        (int)yaw,
+        (int)mode,
+        (int)arm
+    );
+
+    app_log(
+        "[MAP] us   roll=%u pitch=%u throttle=%u "
+        "yaw=%u mode=%u arm=%u\r\n",
+        (unsigned int)roll_us,
+        (unsigned int)pitch_us,
+        (unsigned int)throttle_us,
+        (unsigned int)yaw_us,
+        (unsigned int)mode_us,
+        (unsigned int)arm_us
+    );
 }
 
 static void app_report_channels(
