@@ -46,6 +46,42 @@ typedef struct
     bool initialized;
 } Stm32f407RadioComposition;
 
+typedef struct
+{
+    /*
+     * UART/DMA byte flow.
+     */
+    uint32_t received_bytes;
+    uint32_t processed_bytes;
+
+    /*
+     * Protocol parser results.
+     */
+    uint32_t received_frames;
+    uint32_t valid_frames;
+    uint32_t crc_errors;
+    uint32_t length_errors;
+    uint32_t unsupported_frames;
+
+    /*
+     * DMA transport state.
+     */
+    uint32_t dma_rx_events;
+    uint32_t dma_duplicate_events;
+    uint32_t dma_invalid_events;
+    uint32_t dma_overrun_events;
+    uint32_t dma_dropped_bytes;
+
+    /*
+     * UART error and deferred recovery state.
+     */
+    uint32_t uart_error_events;
+    uint32_t uart_recovery_attempts;
+    uint32_t uart_recovery_successes;
+    uint32_t uart_recovery_failures;
+    uint32_t last_uart_error;
+} Stm32f407RadioDiagnostics;
+
 bool stm32f407_radio_composition_init(
     Stm32f407RadioComposition *composition,
     const Stm32f407RadioCompositionConfig *config
@@ -75,4 +111,8 @@ bool stm32f407_radio_composition_is_failsafe(
     Stm32f407RadioComposition *composition
 );
 
+bool stm32f407_radio_composition_get_diagnostics(
+    const Stm32f407RadioComposition *composition,
+    Stm32f407RadioDiagnostics *out_diagnostics
+);
 #endif /* STM32F407_RADIO_COMPOSITION_H */
