@@ -44,3 +44,75 @@ The STM32F407 platform port and firmware bring-up are complete.
 Real CRSF reception from the RadioMaster RP2 V2 receiver, channel
 validation, failsafe handling, reconnect behavior, and long-running DMA
 stability remain part of the next hardware validation stage.
+
+## RadioMaster RP2 V2 CRSF Validation
+
+### Hardware
+
+- receiver: RadioMaster RP2 V2
+- protocol: CRSF
+- STM32 interface: USART2 RX
+- baud rate: 420000
+- UART format: 8 data bits, no parity, 1 stop bit
+- receive mode: Receive-to-IDLE circular DMA
+- debug output: USART1 at 115200 baud
+
+### Validated functionality
+
+The RadioMaster RP2 V2 receiver was successfully bound to the
+ExpressLRS transmitter and tested with the STM32F407 firmware.
+
+The following functionality was validated on real hardware:
+
+- stable CRSF byte reception through USART2
+- circular DMA position event handling
+- CRSF frame synchronization
+- frame length validation
+- CRC validation
+- decoding of all 16 RC channels
+- detection of active RC link
+- failsafe activation after transmitter shutdown
+- invalidation of stale RC channel data during failsafe
+- automatic link recovery after transmitter restart
+- continued operation without resetting the STM32
+- recovery after receiver signal loss
+- stable operation without DMA overflow or byte loss
+
+### Observed results
+
+A representative validation run produced:
+
+- more than 1,100,000 received and processed bytes
+- more than 43,000 parsed CRSF frames
+- more than 41,000 valid RC channel frames
+- zero CRC errors
+- zero frame length errors
+- zero DMA overruns
+- zero dropped bytes
+- zero UART errors after replacing unreliable wiring
+- zero UART recovery attempts during stable operation
+
+Unsupported frame counters represent valid non-RC CRSF frame types
+which are intentionally ignored by the current receiver implementation.
+
+### Failsafe behavior
+
+When the transmitter was powered off:
+
+- CRSF frame reception stopped
+- the receiver service entered failsafe
+- the latest frame was marked invalid and lost
+- stale channel values remained available only for diagnostics
+- channel data was no longer considered usable for control
+
+When the transmitter was powered on again:
+
+- the CRSF link recovered automatically
+- valid channel frames resumed
+- failsafe was cleared
+- no STM32 reset was required
+
+### Result
+
+The STM32F407 and RadioMaster RP2 V2 CRSF hardware integration is
+considered successfully validated.
