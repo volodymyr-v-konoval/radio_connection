@@ -91,8 +91,41 @@ int main(void)
   MX_DMA_Init();
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
+
   /* USER CODE BEGIN 2 */
-app_main_init();
+  
+  static const uint8_t usart2_ready_message[] =
+      "[BOOT] USART2 initialized\r\n";
+  
+  (void)HAL_UART_Transmit(
+      &huart1,
+      (uint8_t *)usart2_ready_message,
+      sizeof(usart2_ready_message) - 1U,
+      100U
+  );
+
+  static const uint8_t validation_message[] =
+      "[BOOT] Starting board validation\r\n";
+
+  (void)HAL_UART_Transmit(
+      &huart1,
+      (uint8_t *)validation_message,
+      sizeof(validation_message) - 1U,
+      100U
+  );
+
+  app_main_init();
+  
+  static const uint8_t validation_ok_message[] =
+      "[BOOT] Board validation passed\r\n";
+
+  (void)HAL_UART_Transmit(
+      &huart1,
+      (uint8_t *)validation_ok_message,
+      sizeof(validation_ok_message) - 1U,
+      100U
+  );
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

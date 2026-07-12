@@ -53,8 +53,18 @@ void MX_USART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART1_Init 2 */
+  
+  static const uint8_t usart1_ready_message[] =
+      "\r\n[BOOT] USART1 initialized\r\n";
+  
+  (void)HAL_UART_Transmit(
+      &huart1,
+      (uint8_t *)usart1_ready_message,
+      sizeof(usart1_ready_message) - 1U,
+      100U
+  );
 
-  /* USER CODE END USART1_Init 2 */
+/* USER CODE END USART1_Init 2 */
 
 }
 /* USART2 init function */
