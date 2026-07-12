@@ -197,23 +197,17 @@ static void app_report_status(
     uint32_t now_ms
 )
 {
-    Stm32f4UartDmaBackendStats dma_stats = { 0U };
-    Stm32UartDmaTransportStats transport_stats = { 0U };
 
-    stm32f4_uart_dma_backend_get_stats(
-        &s_radio.uart_dma_backend,
-        &dma_stats
-    );
+    Stm32f407RadioDiagnostics diagnostics = { 0U };
 
-    stm32_uart_dma_transport_get_stats(
-        &s_radio.transport_context,
-        &transport_stats
-    );
-
-    const uint32_t produced_bytes =
-        stm32f4_uart_dma_backend_get_produced_count(
-            &s_radio.uart_dma_backend
+    if (!stm32f407_radio_composition_get_diagnostics(
+            &s_radio,
+            &diagnostics)) {
+        app_log(
+            "[DIAG] receiver diagnostics unavailable\r\n"
         );
+        return;
+    }
 
     const bool failsafe =
         stm32f407_radio_composition_is_failsafe(&s_radio);
@@ -221,28 +215,30 @@ static void app_report_status(
     app_log(
         "[CRSF] bytes=%lu read=%lu frames=%lu valid=%lu "
         "crc=%lu len=%lu unsupported=%lu\r\n",
-        (unsigned long)produced_bytes,
-        (unsigned long)transport_stats.bytes_read,
-        (unsigned long)s_radio.crsf_context.received_frames,
-        (unsigned long)s_radio.crsf_context.valid_frames,
-        (unsigned long)s_radio.crsf_context.crc_errors,
-        (unsigned long)s_radio.crsf_context.length_errors,
-        (unsigned long)s_radio.crsf_context.unsupported_frames
+        (unsigned long)diagnostics.received_bytes,
+        (unsigned long)diagnostics.processed_bytes,
+        (unsigned long)diagnostics.received_frames,
+        (unsigned long)diagnostics.valid_frames,
+        (unsigned long)diagnostics.crc_errors,
+        (unsigned long)diagnostics.length_errors,
+        (unsigned long)diagnostics.unsupported_frames
     );
 
     app_log(
         "[DMA] events=%lu duplicate=%lu invalid=%lu "
         "overrun=%lu dropped=%lu uart_err=%lu "
-        "recovery=%lu/%lu last_err=0x%08lX\r\n",
-        (unsigned long)dma_stats.rx_events,
-        (unsigned long)dma_stats.duplicate_events,
-        (unsigned long)dma_stats.invalid_events,
-        (unsigned long)transport_stats.overflow_events,
-        (unsigned long)transport_stats.dropped_bytes,
-        (unsigned long)dma_stats.uart_error_events,
-        (unsigned long)dma_stats.recovery_successes,
-        (unsigned long)dma_stats.recovery_attempts,
-        (unsigned long)dma_stats.last_uart_error
+        "recovery=%lu/%lu failed=%lu "
+        "last_err=0x%08lX\r\n",
+        (unsigned long)diagnostics.dma_rx_events,
+        (unsigned long)diagnostics.dma_duplicate_events,
+        (unsigned long)diagnostics.dma_invalid_events,
+        (unsigned long)diagnostics.dma_overrun_events,
+        (unsigned long)diagnostics.dma_dropped_bytes,
+        (unsigned long)diagnostics.uart_error_events,
+        (unsigned long)diagnostics.uart_recovery_successes,
+        (unsigned long)diagnostics.uart_recovery_attempts,
+        (unsigned long)diagnostics.uart_recovery_failures,
+        (unsigned long)diagnostics.last_uart_error
     );
 
     RcInputFrame frame = { 0 };
@@ -271,15 +267,17 @@ static void app_report_status(
         (unsigned long)frame_age_ms
     );
 
-    if (!frame.frame_valid || failsafe || frame.frame_lost) {
+    if (!frame.frame_valid ||
+        failsafe ||
+        frame.frame_lost) {
         app_log(
-            "[RC] channels unavailable: failsafe active, age=%lu ms\r\n",
+            "[RC] channels unavailable: "
+            "failsafe active, snapshot_age=%lu ms\r\n",
             (unsigned long)frame_age_ms
         );
+
         return;
     }
-
-app_report_channels(&frame);
 
     app_report_channels(&frame);
 }

@@ -147,6 +147,92 @@ void stm32f407_radio_composition_on_uart_error(
     );
 }
 
+bool stm32f407_radio_composition_get_diagnostics(
+    const Stm32f407RadioComposition *composition,
+    Stm32f407RadioDiagnostics *out_diagnostics
+)
+{
+    if (composition == NULL ||
+        out_diagnostics == NULL ||
+        !composition->initialized) {
+        return false;
+    }
+
+    Stm32f4UartDmaBackendStats dma_stats = { 0U };
+    Stm32UartDmaTransportStats transport_stats = { 0U };
+
+    stm32f4_uart_dma_backend_get_stats(
+        &composition->uart_dma_backend,
+        &dma_stats
+    );
+
+    stm32_uart_dma_transport_get_stats(
+        &composition->transport_context,
+        &transport_stats
+    );
+
+    memset(
+        out_diagnostics,
+        0,
+        sizeof(*out_diagnostics)
+    );
+
+    out_diagnostics->received_bytes =
+        stm32f4_uart_dma_backend_get_produced_count(
+            (void *)&composition->uart_dma_backend
+        );
+
+    out_diagnostics->processed_bytes =
+        transport_stats.bytes_read;
+
+    out_diagnostics->received_frames =
+        composition->crsf_context.received_frames;
+
+    out_diagnostics->valid_frames =
+        composition->crsf_context.valid_frames;
+
+    out_diagnostics->crc_errors =
+        composition->crsf_context.crc_errors;
+
+    out_diagnostics->length_errors =
+        composition->crsf_context.length_errors;
+
+    out_diagnostics->unsupported_frames =
+        composition->crsf_context.unsupported_frames;
+
+    out_diagnostics->dma_rx_events =
+        dma_stats.rx_events;
+
+    out_diagnostics->dma_duplicate_events =
+        dma_stats.duplicate_events;
+
+    out_diagnostics->dma_invalid_events =
+        dma_stats.invalid_events;
+
+    out_diagnostics->dma_overrun_events =
+        transport_stats.overflow_events;
+
+    out_diagnostics->dma_dropped_bytes =
+        transport_stats.dropped_bytes;
+
+    out_diagnostics->uart_error_events =
+        dma_stats.uart_error_events;
+
+    out_diagnostics->uart_recovery_attempts =
+        dma_stats.recovery_attempts;
+
+    out_diagnostics->uart_recovery_successes =
+        dma_stats.recovery_successes;
+
+    out_diagnostics->uart_recovery_failures =
+        dma_stats.recovery_failures;
+
+    out_diagnostics->last_uart_error =
+        dma_stats.last_uart_error;
+
+    return true;
+}
+
 bool stm32f407_radio_composition_get_latest_frame(
     Stm32f407RadioComposition *composition,
     RcInputFrame *out_frame

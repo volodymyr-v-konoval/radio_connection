@@ -130,6 +130,65 @@ static bool test_composition_receives_split_crsf_frame_and_recovers(void)
         TEST_ASSERT(frame.channels[i] == 992U, "Each sample channel should be 992");
     }
 
+    Stm32f407RadioDiagnostics diagnostics = { 0U };
+
+    TEST_ASSERT(
+        stm32f407_radio_composition_get_diagnostics(
+            &composition,
+            &diagnostics),
+        "Composition should expose diagnostics"
+    );
+
+    TEST_ASSERT(
+        diagnostics.received_bytes == sizeof(crsf_frame),
+        "Diagnostics should report all DMA-produced bytes"
+    );
+
+    TEST_ASSERT(
+        diagnostics.processed_bytes == sizeof(crsf_frame),
+        "Diagnostics should report all processed bytes"
+    );
+
+    TEST_ASSERT(
+        diagnostics.received_frames == 1U,
+        "Diagnostics should report one parsed CRSF frame"
+    );
+
+    TEST_ASSERT(
+        diagnostics.valid_frames == 1U,
+        "Diagnostics should report one valid CRSF frame"
+    );
+
+    TEST_ASSERT(
+        diagnostics.crc_errors == 0U,
+        "Valid CRSF frame should not produce CRC errors"
+    );
+
+    TEST_ASSERT(
+        diagnostics.length_errors == 0U,
+        "Valid CRSF frame should not produce length errors"
+    );
+
+    TEST_ASSERT(
+        diagnostics.unsupported_frames == 0U,
+        "RC frame should not be reported as unsupported"
+    );
+
+    TEST_ASSERT(
+        diagnostics.dma_rx_events == 2U,
+        "Two DMA position events should be reported"
+    );
+
+    TEST_ASSERT(
+        diagnostics.dma_overrun_events == 0U,
+        "DMA transport should not overrun"
+    );
+
+    TEST_ASSERT(
+        diagnostics.dma_dropped_bytes == 0U,
+        "DMA transport should not drop bytes"
+    );
+
     receiver_uart.ErrorCode = 0x40U;
     stm32f407_radio_composition_on_uart_error(
         &composition,
@@ -150,6 +209,38 @@ static bool test_composition_receives_split_crsf_frame_and_recovers(void)
     TEST_ASSERT(
         fake_stm32f4_hal_state()->receive_calls == 2U,
         "Composition should restart UART DMA after error"
+    );
+
+    TEST_ASSERT(
+        stm32f407_radio_composition_get_diagnostics(
+            &composition,
+            &diagnostics),
+        "Diagnostics should remain available after recovery"
+    );
+
+    TEST_ASSERT(
+        diagnostics.uart_error_events == 1U,
+        "UART error should be included in diagnostics"
+    );
+
+    TEST_ASSERT(
+        diagnostics.uart_recovery_attempts == 1U,
+        "One deferred recovery should be attempted"
+    );
+
+    TEST_ASSERT(
+        diagnostics.uart_recovery_successes == 1U,
+        "Deferred UART recovery should succeed"
+    );
+
+    TEST_ASSERT(
+        diagnostics.uart_recovery_failures == 0U,
+        "Successful recovery should not count as failure"
+    );
+
+    TEST_ASSERT(
+        diagnostics.last_uart_error == 0x40U,
+        "Diagnostics should preserve the last UART error"
     );
 
     return true;
