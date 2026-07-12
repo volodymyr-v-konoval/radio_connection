@@ -1,3 +1,12 @@
 build/
 build-*/
 cmake-build-*/
+
+# STM32CubeIDE build artifacts
+firmware/stm32f407/cubeide/Debug/
+firmware/stm32f407/cubeide/Release/
+firmware/stm32f407/cubeide/.metadata/
+*.elf
+*.map
+*.list
+firmware/stm32f407/cubeide/.settings/language.settings.xml
