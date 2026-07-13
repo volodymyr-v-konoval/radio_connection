@@ -22,6 +22,11 @@ static bool crsf_protocol_get_frame(
     RcInputFrame *out_frame
 );
 
+static bool crsf_protocol_get_uart_config(
+    RadioProtocol *self,
+    RadioUartConfig *out_config
+);
+
 static bool crsf_decode_rc_channels(
     const uint8_t *payload,
     RcInputFrame *out_frame
@@ -43,6 +48,7 @@ void crsf_protocol_init(
     protocol->reset = crsf_protocol_reset;
     protocol->process_byte = crsf_protocol_process_byte;
     protocol->get_frame = crsf_protocol_get_frame;
+    protocol->get_uart_config = crsf_protocol_get_uart_config;
 
     crsf_protocol_reset(protocol);
 }
@@ -157,6 +163,26 @@ static RadioParseResult crsf_protocol_process_byte(
         crsf_protocol_reset(self);
         return RADIO_PARSE_ERROR;
     }
+}
+
+static bool crsf_protocol_get_uart_config(
+    RadioProtocol *self,
+    RadioUartConfig *out_config
+)
+{
+    if (self == NULL ||
+        self->type != RADIO_PROTOCOL_CRSF ||
+        out_config == NULL) {
+        return false;
+    }
+
+    out_config->baud_rate = 420000U;
+    out_config->data_bits = 8U;
+    out_config->parity = RADIO_UART_PARITY_NONE;
+    out_config->stop_bits = RADIO_UART_STOP_BITS_1;
+    out_config->signal_inverted = false;
+
+    return true;
 }
 
 static bool crsf_protocol_get_frame(

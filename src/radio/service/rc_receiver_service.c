@@ -100,7 +100,8 @@ void rc_receiver_service_process(
 
                 service->has_frame = true;
                 service->last_frame_time_ms = now_ms;
-                service->failsafe_active = frame.failsafe;
+                service->failsafe_active =
+                    frame.failsafe || frame.frame_lost;
 
                 rc_service_log(
                     service,

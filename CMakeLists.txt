@@ -20,6 +20,7 @@ set(RADIO_INCLUDE_DIRS
     src/platform/stm32
     src/platform/stm32/f4
     src/radio/protocol/crsf
+    src/radio/protocol/sbus
     firmware/stm32f407/board
     firmware/stm32f407/app
 )
@@ -299,3 +300,71 @@ add_test(
     NAME rc_receiver_task_tests
     COMMAND test_rc_receiver_task
 )
+
+# Stage 10: SBUS protocol and protocol-specific UART configuration
+add_library(radio_sbus STATIC
+    src/radio/protocol/sbus/sbus_protocol.c
+)
+
+target_include_directories(radio_sbus PUBLIC
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_compile_options(radio_sbus PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_sbus_protocol
+    tests/test_sbus_protocol.c
+)
+
+target_link_libraries(test_sbus_protocol PRIVATE
+    radio_sbus
+)
+
+target_compile_options(test_sbus_protocol PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_rc_service_sbus
+    tests/test_rc_service_sbus.c
+)
+
+target_link_libraries(test_rc_service_sbus PRIVATE
+    radio_core
+    radio_sbus
+    platform_pc
+)
+
+target_compile_options(test_rc_service_sbus PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_protocol_uart_config
+    tests/test_protocol_uart_config.c
+)
+
+target_link_libraries(test_protocol_uart_config PRIVATE
+    radio_crsf
+    radio_sbus
+)
+
+target_compile_options(test_protocol_uart_config PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME sbus_protocol_tests
+    COMMAND test_sbus_protocol
+)
+
+add_test(
+    NAME rc_service_sbus_tests
+    COMMAND test_rc_service_sbus
+)
+
+add_test(
+    NAME protocol_uart_config_tests
+    COMMAND test_protocol_uart_config
+)
+
