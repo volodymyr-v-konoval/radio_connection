@@ -10,6 +10,7 @@ void fake_stm32f4_hal_reset(void)
     g_fake_hal.receive_status = HAL_OK;
     g_fake_hal.stop_status = HAL_OK;
     g_fake_hal.transmit_status = HAL_OK;
+    g_fake_hal.transmit_it_status = HAL_OK;
 }
 
 FakeStm32f4HalState *fake_stm32f4_hal_state(void)
@@ -37,6 +38,29 @@ HAL_StatusTypeDef HAL_UART_DMAStop(
     (void)uart;
     g_fake_hal.stop_calls++;
     return g_fake_hal.stop_status;
+}
+
+HAL_StatusTypeDef HAL_UART_Transmit_IT(
+    UART_HandleTypeDef *uart,
+    uint8_t *data,
+    uint16_t size
+)
+{
+    g_fake_hal.transmit_it_calls++;
+    g_fake_hal.last_transmit_it_uart = uart;
+    g_fake_hal.last_transmit_it_size = size;
+
+    size_t to_copy = size;
+    if (to_copy > sizeof(g_fake_hal.tx_it_capture)) {
+        to_copy = sizeof(g_fake_hal.tx_it_capture);
+    }
+
+    if (data != NULL && to_copy > 0U) {
+        memcpy(g_fake_hal.tx_it_capture, data, to_copy);
+    }
+    g_fake_hal.tx_it_capture_length = to_copy;
+
+    return g_fake_hal.transmit_it_status;
 }
 
 HAL_StatusTypeDef HAL_UART_Transmit(

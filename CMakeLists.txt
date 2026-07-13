@@ -20,6 +20,7 @@ set(RADIO_INCLUDE_DIRS
     src/platform/stm32
     src/platform/stm32/f4
     src/radio/protocol/crsf
+    src/radio/telemetry/crsf
     src/radio/protocol/sbus
     firmware/stm32f407/board
     firmware/stm32f407/app
@@ -50,6 +51,23 @@ add_library(radio_crsf STATIC
 target_include_directories(radio_crsf PUBLIC ${RADIO_INCLUDE_DIRS})
 target_compile_options(radio_crsf PRIVATE ${RADIO_WARNING_FLAGS})
 
+add_library(radio_crsf_telemetry STATIC
+    src/radio/telemetry/crsf/crsf_telemetry.c
+    src/radio/telemetry/crsf/crsf_telemetry_service.c
+)
+
+target_include_directories(radio_crsf_telemetry PUBLIC
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(radio_crsf_telemetry PUBLIC
+    radio_crsf
+)
+
+target_compile_options(radio_crsf_telemetry PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
 add_library(platform_pc STATIC
     src/platform/pc/pc_logger.c
     src/platform/pc/pc_time.c
@@ -70,6 +88,7 @@ target_include_directories(platform_stm32_adapters PUBLIC ${RADIO_INCLUDE_DIRS})
 target_compile_options(platform_stm32_adapters PRIVATE ${RADIO_WARNING_FLAGS})
 
 add_library(test_support STATIC
+    tests/support/fake_radio_tx.c
     tests/support/fake_uart_dma_backend.c
 )
 
@@ -174,6 +193,7 @@ target_include_directories(fake_stm32f4_hal PUBLIC
 target_compile_options(fake_stm32f4_hal PRIVATE ${RADIO_WARNING_FLAGS})
 
 add_library(platform_stm32f4_backend_host STATIC
+    src/platform/stm32/f4/stm32f4_uart_tx_backend.c
     src/platform/stm32/f4/stm32f4_uart_dma_backend.c
     src/platform/stm32/f4/stm32f4_uart_logger_backend.c
     src/platform/stm32/f4/stm32f4_time_backend.c
@@ -201,6 +221,10 @@ target_link_libraries(stm32f407_radio_port_host PUBLIC
     platform_stm32_adapters
     platform_stm32f4_backend_host
 )
+target_link_libraries(stm32f407_radio_port_host PUBLIC
+    radio_crsf_telemetry
+)
+
 target_compile_options(stm32f407_radio_port_host PRIVATE ${RADIO_WARNING_FLAGS})
 
 add_executable(test_stm32f4_backend
@@ -368,3 +392,65 @@ add_test(
     COMMAND test_protocol_uart_config
 )
 
+# Stage 11: bidirectional CRSF telemetry
+add_executable(test_crsf_telemetry
+    tests/test_crsf_telemetry.c
+)
+
+target_link_libraries(test_crsf_telemetry PRIVATE
+    radio_crsf_telemetry
+)
+
+target_compile_options(test_crsf_telemetry PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_crsf_telemetry_service
+    tests/test_crsf_telemetry_service.c
+)
+
+target_include_directories(test_crsf_telemetry_service PRIVATE
+    tests/support
+)
+
+target_link_libraries(test_crsf_telemetry_service PRIVATE
+    radio_crsf_telemetry
+    test_support
+)
+
+target_compile_options(test_crsf_telemetry_service PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_stm32f4_uart_tx_backend
+    tests/test_stm32f4_uart_tx_backend.c
+)
+
+target_include_directories(test_stm32f4_uart_tx_backend PRIVATE
+    tests/stubs
+    tests/support
+)
+
+target_link_libraries(test_stm32f4_uart_tx_backend PRIVATE
+    platform_stm32f4_backend_host
+    fake_stm32f4_hal
+)
+
+target_compile_options(test_stm32f4_uart_tx_backend PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME crsf_telemetry_tests
+    COMMAND test_crsf_telemetry
+)
+
+add_test(
+    NAME crsf_telemetry_service_tests
+    COMMAND test_crsf_telemetry_service
+)
+
+add_test(
+    NAME stm32f4_uart_tx_backend_tests
+    COMMAND test_stm32f4_uart_tx_backend
+)

@@ -77,6 +77,48 @@ bool stm32f407_radio_composition_init(
         &composition->crsf_context
     );
 
+    if (!stm32f4_uart_tx_backend_init(
+            &composition->uart_tx_backend,
+            &composition->telemetry_tx,
+            config->receiver_uart)) {
+        (void)stm32f4_uart_dma_backend_stop(
+            &composition->uart_dma_backend);
+        return false;
+    }
+
+    CrsfTelemetryServiceConfig telemetry_config;
+    crsf_telemetry_service_config_init(&telemetry_config);
+
+    if (config->telemetry_battery_period_ms > 0U) {
+        telemetry_config.battery_period_ms =
+            config->telemetry_battery_period_ms;
+    }
+
+    if (config->telemetry_heartbeat_period_ms > 0U) {
+        telemetry_config.heartbeat_period_ms =
+            config->telemetry_heartbeat_period_ms;
+    }
+
+    if (config->telemetry_flight_mode_period_ms > 0U) {
+        telemetry_config.flight_mode_period_ms =
+            config->telemetry_flight_mode_period_ms;
+    }
+
+    if (config->telemetry_device_info.name[0] != '\0') {
+        telemetry_config.device_info =
+            config->telemetry_device_info;
+    }
+
+    if (!crsf_telemetry_service_init(
+            &composition->telemetry_service,
+            &composition->telemetry_tx,
+            &composition->crsf_context,
+            &telemetry_config)) {
+        (void)stm32f4_uart_dma_backend_stop(
+            &composition->uart_dma_backend);
+        return false;
+    }
+
     if (!rc_receiver_service_init(
             &composition->service,
             &composition->transport,
@@ -113,6 +155,12 @@ void stm32f407_radio_composition_process(
     }
 
     rc_receiver_service_process(&composition->service);
+
+
+    (void)crsf_telemetry_service_process(
+        &composition->telemetry_service,
+        composition->time.now_ms(&composition->time)
+    );
 }
 
 void stm32f407_radio_composition_on_uart_rx_event(
@@ -132,6 +180,21 @@ void stm32f407_radio_composition_on_uart_rx_event(
     );
 }
 
+void stm32f407_radio_composition_on_uart_tx_complete(
+    Stm32f407RadioComposition *composition,
+    UART_HandleTypeDef *uart
+)
+{
+    if (composition == NULL || !composition->initialized) {
+        return;
+    }
+
+    stm32f4_uart_tx_backend_on_tx_complete(
+        &composition->uart_tx_backend,
+        uart
+    );
+}
+
 void stm32f407_radio_composition_on_uart_error(
     Stm32f407RadioComposition *composition,
     UART_HandleTypeDef *uart
@@ -143,6 +206,12 @@ void stm32f407_radio_composition_on_uart_error(
 
     stm32f4_uart_dma_backend_on_error(
         &composition->uart_dma_backend,
+        uart
+    );
+
+
+    stm32f4_uart_tx_backend_on_error(
+        &composition->uart_tx_backend,
         uart
     );
 }
@@ -229,6 +298,83 @@ bool stm32f407_radio_composition_get_diagnostics(
 
     out_diagnostics->last_uart_error =
         dma_stats.last_uart_error;
+
+    return true;
+}
+
+void stm32f407_radio_composition_set_battery_telemetry(
+    Stm32f407RadioComposition *composition,
+    const CrsfBatteryTelemetry *battery
+)
+{
+    if (composition == NULL || !composition->initialized) {
+        return;
+    }
+
+    crsf_telemetry_service_set_battery(
+        &composition->telemetry_service,
+        battery
+    );
+}
+
+bool stm32f407_radio_composition_set_flight_mode(
+    Stm32f407RadioComposition *composition,
+    const char *flight_mode
+)
+{
+    if (composition == NULL || !composition->initialized) {
+        return false;
+    }
+
+    return crsf_telemetry_service_set_flight_mode(
+        &composition->telemetry_service,
+        flight_mode
+    );
+}
+
+bool stm32f407_radio_composition_queue_custom_telemetry(
+    Stm32f407RadioComposition *composition,
+    uint8_t frame_type,
+    const uint8_t *payload,
+    size_t payload_length
+)
+{
+    if (composition == NULL || !composition->initialized) {
+        return false;
+    }
+
+    return crsf_telemetry_service_queue_custom_broadcast(
+        &composition->telemetry_service,
+        frame_type,
+        payload,
+        payload_length
+    );
+}
+
+bool stm32f407_radio_composition_get_telemetry_diagnostics(
+    const Stm32f407RadioComposition *composition,
+    Stm32f407CrsfTelemetryDiagnostics *out_diagnostics
+)
+{
+    if (composition == NULL || !composition->initialized ||
+        out_diagnostics == NULL) {
+        return false;
+    }
+
+    crsf_telemetry_service_get_stats(
+        &composition->telemetry_service,
+        &out_diagnostics->service
+    );
+
+    stm32f4_uart_tx_backend_get_stats(
+        &composition->uart_tx_backend,
+        &out_diagnostics->tx
+    );
+
+    out_diagnostics->tx_busy =
+        stm32f4_uart_tx_backend_is_busy(
+            &composition->uart_tx_backend
+        );
 
     return true;
 }

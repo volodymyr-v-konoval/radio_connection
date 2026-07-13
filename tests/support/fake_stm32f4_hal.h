@@ -13,16 +13,23 @@ typedef struct
     HAL_StatusTypeDef receive_status;
     HAL_StatusTypeDef stop_status;
     HAL_StatusTypeDef transmit_status;
+    HAL_StatusTypeDef transmit_it_status;
 
     uint32_t tick_ms;
     uint32_t receive_calls;
     uint32_t stop_calls;
     uint32_t transmit_calls;
+    uint32_t transmit_it_calls;
     uint32_t barrier_calls;
 
     UART_HandleTypeDef *last_receive_uart;
     uint8_t *last_receive_buffer;
     uint16_t last_receive_size;
+
+    UART_HandleTypeDef *last_transmit_it_uart;
+    uint16_t last_transmit_it_size;
+    uint8_t tx_it_capture[FAKE_STM32F4_HAL_TX_CAPTURE_SIZE];
+    size_t tx_it_capture_length;
 
     uint8_t tx_capture[FAKE_STM32F4_HAL_TX_CAPTURE_SIZE];
     size_t tx_capture_length;

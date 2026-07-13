@@ -79,6 +79,12 @@ HAL_StatusTypeDef HAL_UART_DMAStop(
     UART_HandleTypeDef *uart
 );
 
+HAL_StatusTypeDef HAL_UART_Transmit_IT(
+    UART_HandleTypeDef *uart,
+    uint8_t *data,
+    uint16_t size
+);
+
 HAL_StatusTypeDef HAL_UART_Transmit(
     UART_HandleTypeDef *uart,
     uint8_t *data,
