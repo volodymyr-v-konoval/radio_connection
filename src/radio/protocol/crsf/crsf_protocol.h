@@ -14,6 +14,8 @@
 #define CRSF_ADDRESS_CRSF_RECEIVER 0xECU
 
 #define CRSF_FRAME_TYPE_RC_CHANNELS_PACKED 0x16U
+#define CRSF_FRAME_TYPE_PARAMETER_PING       0x28U
+#define CRSF_EXTENDED_PING_FRAME_LENGTH      4U
 
 typedef enum
 {
@@ -32,6 +34,8 @@ typedef struct
 
     RcInputFrame latest_frame;
     bool frame_ready;
+    bool device_ping_pending;
+    uint8_t device_ping_origin;
 
     uint32_t received_frames;
     uint32_t valid_frames;
@@ -43,6 +47,12 @@ typedef struct
 void crsf_protocol_init(
     RadioProtocol *protocol,
     CrsfProtocolContext *context
+);
+
+
+bool crsf_protocol_take_device_ping(
+    CrsfProtocolContext *context,
+    uint8_t *out_origin
 );
 
 #endif /* CRSF_PROTOCOL_H */

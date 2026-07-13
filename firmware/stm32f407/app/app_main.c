@@ -18,6 +18,7 @@
 #define APP_LOGGER_TIMEOUT_MS         20U
 #define APP_LOG_MESSAGE_SIZE         384U
 #define APP_CRSF_CHANNEL_COUNT        16U
+#define APP_ENABLE_CRSF_TELEMETRY_DEMO  1
 
 static uint8_t s_crsf_dma_buffer[
     FK407M3_RADIO_DMA_BUFFER_SIZE
@@ -97,7 +98,7 @@ void app_main_init(void)
 {
     app_log("\r\n");
     app_log(
-        "[BOOT] radio_connection STM32F407 Stage 8\r\n"
+        "[BOOT] radio_connection STM32F407 Stage 11\r\n"
     );
 
     const uint32_t validation_errors =
@@ -126,7 +127,20 @@ void app_main_init(void)
         .log_level = RADIO_LOG_LEVEL_WARN,
 
         .failsafe_timeout_ms =
-            FK407M3_RADIO_FAILSAFE_TIMEOUT_MS
+            FK407M3_RADIO_FAILSAFE_TIMEOUT_MS,
+
+        .telemetry_battery_period_ms = 500U,
+        .telemetry_heartbeat_period_ms = 1000U,
+        .telemetry_flight_mode_period_ms = 2000U,
+
+        .telemetry_device_info = {
+            .name = "radio_connection",
+            .serial_number = 0x52414449UL,
+            .hardware_id = 0x00040701UL,
+            .firmware_id = 0x00030000UL,
+            .parameter_count = 0U,
+            .parameter_version = 1U
+        }
     };
 
     if (!stm32f407_radio_composition_init(
@@ -138,6 +152,34 @@ void app_main_init(void)
 
         Error_Handler();
     }
+
+#if APP_ENABLE_CRSF_TELEMETRY_DEMO
+    const CrsfBatteryTelemetry demo_battery = {
+        .voltage_mv = 16800U,
+        .current_ma = 1250U,
+        .consumed_mah = 42U,
+        .remaining_percent = 75U
+    };
+
+    stm32f407_radio_composition_set_battery_telemetry(
+        &s_radio,
+        &demo_battery
+    );
+
+    if (!stm32f407_radio_composition_set_flight_mode(
+            &s_radio,
+            "BENCH")) {
+        app_log(
+            "[TLM] demo flight mode initialization FAILED\\r\\n"
+        );
+
+        Error_Handler();
+    }
+
+    app_log(
+        "[TLM] demo enabled: 16.8V 1.3A 42mAh 75%% mode=BENCH\\r\\n"
+    );
+#endif
 
     if (!radio_control_profile_init(
             &s_channel_mapper)) {
@@ -204,7 +246,7 @@ void app_main_init(void)
     );
 
     app_log(
-        "[BOOT] Stage 8 initialization complete\r\n"
+        "[BOOT] Stage 11 initialization complete\r\n"
     );
 }
 
@@ -341,6 +383,30 @@ static void app_report_status(
         (unsigned long)diagnostics.uart_recovery_failures,
         (unsigned long)diagnostics.last_uart_error
     );
+
+    Stm32f407CrsfTelemetryDiagnostics telemetry = { 0 };
+
+    if (stm32f407_radio_composition_get_telemetry_diagnostics(
+            &s_radio,
+            &telemetry)) {
+        app_log(
+            "[TLM] frames=%lu batt=%lu heartbeat=%lu mode=%lu "
+            "device=%lu custom=%lu ping=%lu busy=%u "
+            "tx=%lu/%lu txerr=%lu uarterr=%lu\\r\\n",
+            (unsigned long)telemetry.service.frames_started,
+            (unsigned long)telemetry.service.battery_frames,
+            (unsigned long)telemetry.service.heartbeat_frames,
+            (unsigned long)telemetry.service.flight_mode_frames,
+            (unsigned long)telemetry.service.device_info_frames,
+            (unsigned long)telemetry.service.custom_frames,
+            (unsigned long)telemetry.service.ping_requests,
+            telemetry.tx_busy ? 1U : 0U,
+            (unsigned long)telemetry.tx.completed_frames,
+            (unsigned long)telemetry.tx.started_frames,
+            (unsigned long)telemetry.tx.hal_errors,
+            (unsigned long)telemetry.tx.uart_errors
+        );
+    }
 
     app_report_control_command();
 
@@ -631,6 +697,20 @@ void HAL_UARTEx_RxEventCallback(
         &s_radio,
         uart,
         dma_position
+    );
+}
+
+void HAL_UART_TxCpltCallback(
+    UART_HandleTypeDef *uart
+)
+{
+    if (!s_initialized || uart != &huart2) {
+        return;
+    }
+
+    stm32f407_radio_composition_on_uart_tx_complete(
+        &s_radio,
+        uart
     );
 }
 

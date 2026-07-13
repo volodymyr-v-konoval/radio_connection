@@ -12,6 +12,18 @@
 #define CRSF_RC_CHANNEL_COUNT    16U
 
 static void crsf_protocol_reset(RadioProtocol *self);
+static void crsf_parser_reset(CrsfProtocolContext *ctx);
+static void crsf_parser_reset(CrsfProtocolContext *ctx)
+{
+    if (ctx == NULL) {
+        return;
+    }
+
+    ctx->parser_state = CRSF_PARSER_WAIT_ADDRESS;
+    ctx->frame_pos = 0U;
+    ctx->expected_length = 0U;
+}
+
 static RadioParseResult crsf_protocol_process_byte(
     RadioProtocol *self,
     uint8_t byte,
@@ -65,6 +77,8 @@ static void crsf_protocol_reset(RadioProtocol *self)
     ctx->frame_pos = 0U;
     ctx->expected_length = 0U;
     ctx->frame_ready = false;
+    ctx->device_ping_pending = false;
+    ctx->device_ping_origin = 0U;
 }
 
 static RadioParseResult crsf_protocol_process_byte(
@@ -128,6 +142,27 @@ static RadioParseResult crsf_protocol_process_byte(
                 return RADIO_PARSE_ERROR;
             }
 
+            if (frame_type == CRSF_FRAME_TYPE_PARAMETER_PING) {
+                if (ctx->expected_length !=
+                    CRSF_EXTENDED_PING_FRAME_LENGTH) {
+                    ctx->length_errors++;
+                    crsf_parser_reset(ctx);
+                    return RADIO_PARSE_ERROR;
+                }
+
+                const uint8_t destination = ctx->frame_buffer[3];
+                const uint8_t origin = ctx->frame_buffer[4];
+
+                if (destination == CRSF_ADDRESS_FLIGHT_CTRL ||
+                    destination == 0x00U) {
+                    ctx->device_ping_pending = true;
+                    ctx->device_ping_origin = origin;
+                }
+
+                crsf_parser_reset(ctx);
+                return RADIO_PARSE_IDLE;
+            }
+
             if (frame_type == CRSF_FRAME_TYPE_RC_CHANNELS_PACKED) {
                 const uint8_t *payload =
                     &ctx->frame_buffer[CRSF_FRAME_TYPE_INDEX + 1U];
@@ -182,6 +217,22 @@ static bool crsf_protocol_get_uart_config(
     out_config->stop_bits = RADIO_UART_STOP_BITS_1;
     out_config->signal_inverted = false;
 
+    return true;
+}
+
+bool crsf_protocol_take_device_ping(
+    CrsfProtocolContext *context,
+    uint8_t *out_origin
+)
+{
+    if (context == NULL || out_origin == NULL ||
+        !context->device_ping_pending) {
+        return false;
+    }
+
+    *out_origin = context->device_ping_origin;
+    context->device_ping_pending = false;
+    context->device_ping_origin = 0U;
     return true;
 }
 
