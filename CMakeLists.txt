@@ -11,6 +11,7 @@ enable_testing()
 set(RADIO_INCLUDE_DIRS
     src
     src/radio/common
+    src/radio/control
     src/radio/mapping
     src/radio/protocol
     src/radio/port
@@ -34,6 +35,7 @@ set(RADIO_WARNING_FLAGS
 add_library(radio_core STATIC
     src/radio/service/rc_receiver_service.c
     src/radio/mapping/rc_channel_mapper.c
+    src/radio/control/rc_control_policy.c
 )
 
 target_include_directories(radio_core PUBLIC ${RADIO_INCLUDE_DIRS})
@@ -75,6 +77,18 @@ target_include_directories(test_support PUBLIC
     ${RADIO_INCLUDE_DIRS}
 )
 target_compile_options(test_support PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_rc_control_policy
+    tests/test_rc_control_policy.c
+)
+
+target_link_libraries(test_rc_control_policy PRIVATE
+    radio_core
+)
+
+target_compile_options(test_rc_control_policy PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
 
 add_executable(test_rc_channel_mapper
     tests/test_rc_channel_mapper.c
@@ -130,6 +144,11 @@ target_link_libraries(test_rc_service_stm32_dma PRIVATE
 )
 
 target_compile_options(test_rc_service_stm32_dma PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_test(
+    NAME rc_control_policy_tests
+    COMMAND test_rc_control_policy
+)
 
 add_test(
     NAME rc_channel_mapper_tests

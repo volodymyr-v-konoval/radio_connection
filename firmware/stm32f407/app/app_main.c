@@ -5,17 +5,19 @@
 #include "main.h"
 #include "radio_composition.h"
 #include "radio_control_profile.h"
+#include "rc_control_policy.h"
 #include "usart.h"
 
 #include <stdbool.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
-#define APP_STATUS_PERIOD_MS       1000U
-#define APP_LOGGER_TIMEOUT_MS      20U
-#define APP_LOG_MESSAGE_SIZE       384U
-#define APP_CRSF_CHANNEL_COUNT      16U
+#define APP_STATUS_PERIOD_MS        1000U
+#define APP_LOGGER_TIMEOUT_MS         20U
+#define APP_LOG_MESSAGE_SIZE         384U
+#define APP_CRSF_CHANNEL_COUNT        16U
 
 static uint8_t s_crsf_dma_buffer[
     FK407M3_RADIO_DMA_BUFFER_SIZE
@@ -23,18 +25,32 @@ static uint8_t s_crsf_dma_buffer[
 
 static Stm32f407RadioComposition s_radio;
 static RcChannelMapper s_channel_mapper;
+static RcControlPolicy s_control_policy;
+
+static RcControlCommand s_latest_control_command;
 
 static bool s_initialized = false;
 static bool s_link_seen = false;
 static bool s_previous_failsafe = true;
+static bool s_has_control_command = false;
 
 static uint32_t s_last_status_time_ms = 0U;
 
 static void app_log(const char *format, ...);
+static void app_update_control(void);
 static void app_report_link_transition(void);
 static void app_report_status(uint32_t now_ms);
 static void app_report_channels(const RcInputFrame *frame);
 static void app_report_mapped_controls(const RcInputFrame *frame);
+static void app_report_control_command(void);
+
+static const char *app_control_state_name(
+    RcControlState state
+);
+
+static const char *app_control_reason_name(
+    RcControlSafetyReason reason
+);
 
 static void app_log(
     const char *format,
@@ -81,7 +97,7 @@ void app_main_init(void)
 {
     app_log("\r\n");
     app_log(
-        "[BOOT] radio_connection STM32F407 Stage 7\r\n"
+        "[BOOT] radio_connection STM32F407 Stage 8\r\n"
     );
 
     const uint32_t validation_errors =
@@ -107,11 +123,6 @@ void app_main_init(void)
         .logger_uart = &huart1,
         .logger_timeout_ms = APP_LOGGER_TIMEOUT_MS,
 
-        /*
-         * INFO is intentionally disabled here because the receiver
-         * service currently emits one INFO log for every valid frame.
-         * At CRSF frame rates that would overload the debug UART.
-         */
         .log_level = RADIO_LOG_LEVEL_WARN,
 
         .failsafe_timeout_ms =
@@ -129,11 +140,11 @@ void app_main_init(void)
     }
 
     if (!radio_control_profile_init(
-          &s_channel_mapper)) {
+            &s_channel_mapper)) {
         app_log(
             "[MAP] radio control profile initialization FAILED\r\n"
         );
-    
+
         Error_Handler();
     }
 
@@ -143,21 +154,57 @@ void app_main_init(void)
         "CH4=yaw CH7=mode CH8=arm\r\n"
     );
 
+    const RcControlPolicyConfig control_config = {
+        .arm_on_threshold = 750,
+        .arm_off_threshold = 250,
+        .throttle_arm_max = 50,
+        .require_arm_release_after_failsafe = true
+    };
+
+    if (!rc_control_policy_init(
+            &s_control_policy,
+            &control_config)) {
+        app_log(
+            "[CONTROL] policy initialization FAILED\r\n"
+        );
+
+        Error_Handler();
+    }
+
+    s_has_control_command =
+        rc_control_policy_process(
+            &s_control_policy,
+            NULL,
+            &s_latest_control_command
+        );
+
+    app_log(
+        "[CONTROL] policy ready: "
+        "arm_on=750 arm_off=250 "
+        "throttle_arm_max=50 "
+        "release_after_failsafe=1\r\n"
+    );
+
     s_initialized = true;
     s_link_seen = false;
+
     s_previous_failsafe =
-        stm32f407_radio_composition_is_failsafe(&s_radio);
+        stm32f407_radio_composition_is_failsafe(
+            &s_radio
+        );
 
     s_last_status_time_ms = HAL_GetTick();
 
     app_log(
         "[CRSF] USART2 Receive-to-IDLE circular DMA started\r\n"
     );
+
     app_log(
         "[CRSF] waiting for RadioMaster RP2 V2 frames\r\n"
     );
+
     app_log(
-        "[BOOT] Stage 7 initialization complete\r\n"
+        "[BOOT] Stage 8 initialization complete\r\n"
     );
 }
 
@@ -167,16 +214,9 @@ void app_main_poll(void)
         return;
     }
 
-    /*
-     * Runs outside interrupt context:
-     * - performs deferred UART recovery;
-     * - reads new DMA bytes;
-     * - feeds bytes to the CRSF parser;
-     * - publishes the latest RcInputFrame;
-     * - updates failsafe state.
-     */
     stm32f407_radio_composition_process(&s_radio);
 
+    app_update_control();
     app_report_link_transition();
 
     const uint32_t now_ms = HAL_GetTick();
@@ -188,15 +228,56 @@ void app_main_poll(void)
     }
 }
 
+static void app_update_control(void)
+{
+    RcInputFrame frame = { 0 };
+
+    if (!stm32f407_radio_composition_get_latest_frame(
+            &s_radio,
+            &frame)) {
+        s_has_control_command =
+            rc_control_policy_process(
+                &s_control_policy,
+                NULL,
+                &s_latest_control_command
+            );
+
+        return;
+    }
+
+    RcMappedInput mapped = { 0 };
+
+    (void)rc_channel_mapper_map(
+        &s_channel_mapper,
+        &frame,
+        &mapped
+    );
+
+    mapped.frame_valid = frame.frame_valid;
+    mapped.frame_lost = frame.frame_lost;
+    mapped.failsafe =
+        frame.failsafe ||
+        stm32f407_radio_composition_is_failsafe(
+            &s_radio
+        );
+    mapped.timestamp_ms = frame.timestamp_ms;
+    mapped.protocol = frame.protocol;
+
+    s_has_control_command =
+        rc_control_policy_process(
+            &s_control_policy,
+            &mapped,
+            &s_latest_control_command
+        );
+}
+
 static void app_report_link_transition(void)
 {
     const bool failsafe =
-        stm32f407_radio_composition_is_failsafe(&s_radio);
+        stm32f407_radio_composition_is_failsafe(
+            &s_radio
+        );
 
-    /*
-     * The first valid CRSF frame establishes the initial link.
-     * This is kept separate from reconnect reporting.
-     */
     if (!failsafe && !s_link_seen) {
         s_link_seen = true;
         app_log("[CRSF] link active\r\n");
@@ -215,7 +296,6 @@ static void app_report_status(
     uint32_t now_ms
 )
 {
-
     Stm32f407RadioDiagnostics diagnostics = { 0U };
 
     if (!stm32f407_radio_composition_get_diagnostics(
@@ -224,11 +304,14 @@ static void app_report_status(
         app_log(
             "[DIAG] receiver diagnostics unavailable\r\n"
         );
+
         return;
     }
 
     const bool failsafe =
-        stm32f407_radio_composition_is_failsafe(&s_radio);
+        stm32f407_radio_composition_is_failsafe(
+            &s_radio
+        );
 
     app_log(
         "[CRSF] bytes=%lu read=%lu frames=%lu valid=%lu "
@@ -258,6 +341,8 @@ static void app_report_status(
         (unsigned long)diagnostics.uart_recovery_failures,
         (unsigned long)diagnostics.last_uart_error
     );
+
+    app_report_control_command();
 
     RcInputFrame frame = { 0 };
 
@@ -298,8 +383,43 @@ static void app_report_status(
     }
 
     app_report_channels(&frame);
-
     app_report_mapped_controls(&frame);
+}
+
+static void app_report_channels(
+    const RcInputFrame *frame
+)
+{
+    if (frame == NULL ||
+        frame->channel_count < APP_CRSF_CHANNEL_COUNT) {
+        return;
+    }
+
+    app_log(
+        "[RC] ch01=%u ch02=%u ch03=%u ch04=%u "
+        "ch05=%u ch06=%u ch07=%u ch08=%u\r\n",
+        (unsigned int)frame->channels[0],
+        (unsigned int)frame->channels[1],
+        (unsigned int)frame->channels[2],
+        (unsigned int)frame->channels[3],
+        (unsigned int)frame->channels[4],
+        (unsigned int)frame->channels[5],
+        (unsigned int)frame->channels[6],
+        (unsigned int)frame->channels[7]
+    );
+
+    app_log(
+        "[RC] ch09=%u ch10=%u ch11=%u ch12=%u "
+        "ch13=%u ch14=%u ch15=%u ch16=%u\r\n",
+        (unsigned int)frame->channels[8],
+        (unsigned int)frame->channels[9],
+        (unsigned int)frame->channels[10],
+        (unsigned int)frame->channels[11],
+        (unsigned int)frame->channels[12],
+        (unsigned int)frame->channels[13],
+        (unsigned int)frame->channels[14],
+        (unsigned int)frame->channels[15]
+    );
 }
 
 static void app_report_mapped_controls(
@@ -406,48 +526,98 @@ static void app_report_mapped_controls(
     );
 }
 
-static void app_report_channels(
-    const RcInputFrame *frame
-)
+static void app_report_control_command(void)
 {
-    if (frame == NULL ||
-        frame->channel_count < APP_CRSF_CHANNEL_COUNT) {
+    if (!s_has_control_command) {
+        app_log(
+            "[CONTROL] command unavailable\r\n"
+        );
+
         return;
     }
 
     app_log(
-        "[RC] ch01=%u ch02=%u ch03=%u ch04=%u "
-        "ch05=%u ch06=%u ch07=%u ch08=%u\r\n",
-        (unsigned int)frame->channels[0],
-        (unsigned int)frame->channels[1],
-        (unsigned int)frame->channels[2],
-        (unsigned int)frame->channels[3],
-        (unsigned int)frame->channels[4],
-        (unsigned int)frame->channels[5],
-        (unsigned int)frame->channels[6],
-        (unsigned int)frame->channels[7]
+        "[CONTROL] state=%s input=%u armed=%u "
+        "enabled=%u safe=%u reason=%s\r\n",
+        app_control_state_name(
+            s_latest_control_command.state
+        ),
+        s_latest_control_command.input_valid ? 1U : 0U,
+        s_latest_control_command.armed ? 1U : 0U,
+        s_latest_control_command.outputs_enabled ? 1U : 0U,
+        s_latest_control_command.safe_state_active ? 1U : 0U,
+        app_control_reason_name(
+            s_latest_control_command.reason
+        )
     );
 
     app_log(
-        "[RC] ch09=%u ch10=%u ch11=%u ch12=%u "
-        "ch13=%u ch14=%u ch15=%u ch16=%u\r\n",
-        (unsigned int)frame->channels[8],
-        (unsigned int)frame->channels[9],
-        (unsigned int)frame->channels[10],
-        (unsigned int)frame->channels[11],
-        (unsigned int)frame->channels[12],
-        (unsigned int)frame->channels[13],
-        (unsigned int)frame->channels[14],
-        (unsigned int)frame->channels[15]
+        "[CONTROL] out roll=%d pitch=%d throttle=%d "
+        "yaw=%d mode=%d\r\n",
+        (int)s_latest_control_command.roll,
+        (int)s_latest_control_command.pitch,
+        (int)s_latest_control_command.throttle,
+        (int)s_latest_control_command.yaw,
+        (int)s_latest_control_command.mode
     );
 }
 
-/*
- * HAL calls this callback from UART/DMA interrupt context.
- *
- * No parsing and no blocking UART logging are performed here.
- * We only publish the current DMA write position to the backend.
- */
+static const char *app_control_state_name(
+    RcControlState state
+)
+{
+    switch (state) {
+    case RC_CONTROL_STATE_SAFE:
+        return "SAFE";
+
+    case RC_CONTROL_STATE_READY:
+        return "READY";
+
+    case RC_CONTROL_STATE_ACTIVE:
+        return "ACTIVE";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
+static const char *app_control_reason_name(
+    RcControlSafetyReason reason
+)
+{
+    switch (reason) {
+    case RC_CONTROL_REASON_NONE:
+        return "NONE";
+
+    case RC_CONTROL_REASON_NO_INPUT:
+        return "NO_INPUT";
+
+    case RC_CONTROL_REASON_INVALID_FRAME:
+        return "INVALID_FRAME";
+
+    case RC_CONTROL_REASON_FRAME_LOST:
+        return "FRAME_LOST";
+
+    case RC_CONTROL_REASON_FAILSAFE:
+        return "FAILSAFE";
+
+    case RC_CONTROL_REASON_MAPPING_INCOMPLETE:
+        return "MAPPING_INCOMPLETE";
+
+    case RC_CONTROL_REASON_ARM_RELEASE_REQUIRED:
+        return "ARM_RELEASE_REQUIRED";
+
+    case RC_CONTROL_REASON_THROTTLE_NOT_LOW:
+        return "THROTTLE_NOT_LOW";
+
+    case RC_CONTROL_REASON_DISARMED:
+        return "DISARMED";
+
+    default:
+        return "UNKNOWN";
+    }
+}
+
 void HAL_UARTEx_RxEventCallback(
     UART_HandleTypeDef *uart,
     uint16_t dma_position
@@ -464,12 +634,6 @@ void HAL_UARTEx_RxEventCallback(
     );
 }
 
-/*
- * UART recovery is intentionally deferred.
- *
- * This callback only records the error. The actual DMA stop/restart
- * happens later from app_main_poll() through composition_process().
- */
 void HAL_UART_ErrorCallback(
     UART_HandleTypeDef *uart
 )
