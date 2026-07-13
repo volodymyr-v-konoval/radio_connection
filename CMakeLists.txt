@@ -240,3 +240,62 @@ add_test(
         -DPROJECT_ROOT=${CMAKE_CURRENT_SOURCE_DIR}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/check_architecture.cmake
 )
+
+# Stage 9: optional FreeRTOS receiver wrapper host validation
+#
+# The production wrapper lives under src/platform/freertos and includes
+# FreeRTOS headers. Host tests compile it against deterministic fake kernel
+# headers, while the existing bare-metal STM32 firmware remains unchanged.
+add_library(fake_freertos STATIC
+    tests/fakes/freertos/fake_freertos.c
+)
+
+target_include_directories(fake_freertos PUBLIC
+    tests/fakes/freertos
+)
+
+target_compile_options(fake_freertos PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_library(platform_freertos_wrapper_host STATIC
+    src/platform/freertos/rc_receiver_task.c
+)
+
+target_include_directories(platform_freertos_wrapper_host PUBLIC
+    src/platform/freertos
+    tests/fakes/freertos
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(platform_freertos_wrapper_host PUBLIC
+    fake_freertos
+)
+
+target_compile_options(platform_freertos_wrapper_host PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_executable(test_rc_receiver_task
+    tests/test_rc_receiver_task.c
+)
+
+target_include_directories(test_rc_receiver_task PRIVATE
+    src/platform/freertos
+    tests/fakes/freertos
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_rc_receiver_task PRIVATE
+    platform_freertos_wrapper_host
+    fake_freertos
+)
+
+target_compile_options(test_rc_receiver_task PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME rc_receiver_task_tests
+    COMMAND test_rc_receiver_task
+)
