@@ -10,3 +10,7 @@ firmware/stm32f407/cubeide/.metadata/
 *.map
 *.list
 firmware/stm32f407/cubeide/.settings/language.settings.xml
+firmware/stm32f401/cubeide/Debug/
+
+firmware/**/cubeide/Debug*/
+firmware/**/cubeide/Release*/

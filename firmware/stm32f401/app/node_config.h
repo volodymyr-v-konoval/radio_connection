@@ -1,0 +1,31 @@
+#ifndef STM32F401_NODE_CONFIG_H
+#define STM32F401_NODE_CONFIG_H
+
+#include "duplex_link_service.h"
+
+#define NODE_ROLE_INITIATOR 1
+#define NODE_ROLE_RESPONDER 2
+
+#ifndef LORA_NODE_ROLE
+#define LORA_NODE_ROLE NODE_ROLE_INITIATOR
+#endif
+
+#if LORA_NODE_ROLE == NODE_ROLE_INITIATOR
+
+#define NODE_CONFIG_DUPLEX_ROLE DUPLEX_LINK_ROLE_INITIATOR
+#define NODE_CONFIG_NAME        "Node A"
+#define NODE_CONFIG_ID          1U
+
+#elif LORA_NODE_ROLE == NODE_ROLE_RESPONDER
+
+#define NODE_CONFIG_DUPLEX_ROLE DUPLEX_LINK_ROLE_RESPONDER
+#define NODE_CONFIG_NAME        "Node B"
+#define NODE_CONFIG_ID          2U
+
+#else
+
+#error "Invalid LORA_NODE_ROLE"
+
+#endif
+
+#endif /* STM32F401_NODE_CONFIG_H */
