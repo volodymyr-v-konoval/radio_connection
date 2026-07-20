@@ -19,11 +19,19 @@ set(RADIO_INCLUDE_DIRS
     src/platform/pc
     src/platform/stm32
     src/platform/stm32/f4
+    src/platform/stm32/f4/sx128x
     src/radio/protocol/crsf
     src/radio/telemetry/crsf
     src/radio/protocol/sbus
+    src/link/common
+    src/link/port
+    src/link/service
+    src/link/adapter
+    src/drivers/sx128x
     firmware/stm32f407/board
     firmware/stm32f407/app
+    firmware/stm32f401/board
+    firmware/stm32f401/app
 )
 
 set(RADIO_WARNING_FLAGS
@@ -50,6 +58,53 @@ add_library(radio_crsf STATIC
 
 target_include_directories(radio_crsf PUBLIC ${RADIO_INCLUDE_DIRS})
 target_compile_options(radio_crsf PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_library(link_core STATIC
+    src/link/common/link_crc16.c
+    src/link/common/link_packet.c
+)
+
+target_include_directories(link_core PUBLIC ${RADIO_INCLUDE_DIRS})
+target_compile_options(link_core PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_library(duplex_link_service STATIC
+    src/link/service/duplex_link_service.c
+)
+
+target_include_directories(duplex_link_service PUBLIC
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(duplex_link_service PUBLIC
+    link_core
+)
+
+target_compile_options(duplex_link_service PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_library(sx128x_driver STATIC
+    src/drivers/sx128x/sx128x.c
+)
+
+target_include_directories(sx128x_driver PUBLIC ${RADIO_INCLUDE_DIRS})
+target_compile_options(sx128x_driver PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_library(sx128x_packet_radio STATIC
+    src/link/adapter/sx128x_packet_radio.c
+)
+
+target_include_directories(sx128x_packet_radio PUBLIC
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(sx128x_packet_radio PUBLIC
+    sx128x_driver
+)
+
+target_compile_options(sx128x_packet_radio PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
 
 add_library(radio_crsf_telemetry STATIC
     src/radio/telemetry/crsf/crsf_telemetry.c
@@ -89,6 +144,8 @@ target_compile_options(platform_stm32_adapters PRIVATE ${RADIO_WARNING_FLAGS})
 
 add_library(test_support STATIC
     tests/support/fake_radio_tx.c
+    tests/support/fake_packet_radio.c
+    tests/support/fake_sx128x_port.c
     tests/support/fake_uart_dma_backend.c
 )
 
@@ -177,6 +234,111 @@ add_test(
 
 add_test(NAME crsf_protocol_tests COMMAND test_crsf)
 add_test(NAME rc_service_crsf_tests COMMAND test_rc_service_crsf)
+
+add_executable(test_link_crc16
+    tests/test_link_crc16.c
+)
+
+target_link_libraries(test_link_crc16 PRIVATE link_core)
+target_compile_options(test_link_crc16 PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_link_packet
+    tests/test_link_packet.c
+)
+
+target_link_libraries(test_link_packet PRIVATE link_core)
+target_compile_options(test_link_packet PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_test(NAME link_crc16_tests COMMAND test_link_crc16)
+add_test(NAME link_packet_tests COMMAND test_link_packet)
+
+add_executable(test_packet_radio_if
+    tests/test_packet_radio_if.c
+)
+
+target_include_directories(test_packet_radio_if PRIVATE
+    tests/support
+)
+
+target_link_libraries(test_packet_radio_if PRIVATE
+    test_support
+)
+
+target_compile_options(test_packet_radio_if PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME packet_radio_if_tests
+    COMMAND test_packet_radio_if
+)
+
+add_executable(test_duplex_link_service
+    tests/test_duplex_link_service.c
+)
+
+target_include_directories(test_duplex_link_service PRIVATE
+    tests/support
+)
+
+target_link_libraries(test_duplex_link_service PRIVATE
+    duplex_link_service
+    test_support
+)
+
+target_compile_options(test_duplex_link_service PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME duplex_link_service_tests
+    COMMAND test_duplex_link_service
+)
+
+add_executable(test_sx128x_driver
+    tests/test_sx128x_driver.c
+)
+
+target_include_directories(test_sx128x_driver PRIVATE
+    tests/support
+)
+
+target_link_libraries(test_sx128x_driver PRIVATE
+    sx128x_driver
+    test_support
+)
+
+target_compile_options(test_sx128x_driver PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME sx128x_driver_tests
+    COMMAND test_sx128x_driver
+)
+
+add_executable(test_sx128x_packet_radio
+    tests/test_sx128x_packet_radio.c
+)
+
+target_include_directories(test_sx128x_packet_radio PRIVATE
+    tests/support
+)
+
+target_link_libraries(test_sx128x_packet_radio PRIVATE
+    sx128x_packet_radio
+    test_support
+)
+
+target_compile_options(test_sx128x_packet_radio PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME sx128x_packet_radio_tests
+    COMMAND test_sx128x_packet_radio
+)
+
 add_test(NAME stm32_adapter_tests COMMAND test_stm32_adapters)
 add_test(NAME rc_service_stm32_dma_tests COMMAND test_rc_service_stm32_dma)
 
@@ -197,6 +359,7 @@ add_library(platform_stm32f4_backend_host STATIC
     src/platform/stm32/f4/stm32f4_uart_dma_backend.c
     src/platform/stm32/f4/stm32f4_uart_logger_backend.c
     src/platform/stm32/f4/stm32f4_time_backend.c
+    src/platform/stm32/f4/sx128x/stm32f4_sx128x_port.c
 )
 
 target_include_directories(platform_stm32f4_backend_host PUBLIC
@@ -227,6 +390,28 @@ target_link_libraries(stm32f407_radio_port_host PUBLIC
 
 target_compile_options(stm32f407_radio_port_host PRIVATE ${RADIO_WARNING_FLAGS})
 
+add_library(stm32f401_link_port_host STATIC
+    firmware/stm32f401/board/blackpill_f401cc_sx128x.c
+    firmware/stm32f401/app/link_composition.c
+)
+
+target_include_directories(stm32f401_link_port_host PUBLIC
+    tests/stubs
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(stm32f401_link_port_host PUBLIC
+    platform_stm32_adapters
+    platform_stm32f4_backend_host
+    sx128x_driver
+    sx128x_packet_radio
+    duplex_link_service
+)
+
+target_compile_options(stm32f401_link_port_host PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
 add_executable(test_stm32f4_backend
     tests/test_stm32f4_backend.c
 )
@@ -256,6 +441,54 @@ target_link_libraries(test_stm32f407_composition PRIVATE
     fake_stm32f4_hal
 )
 target_compile_options(test_stm32f407_composition PRIVATE ${RADIO_WARNING_FLAGS})
+
+add_executable(test_stm32f4_sx128x_port
+    tests/test_stm32f4_sx128x_port.c
+)
+
+target_include_directories(test_stm32f4_sx128x_port PRIVATE
+    tests/stubs
+    tests/support
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_stm32f4_sx128x_port PRIVATE
+    platform_stm32f4_backend_host
+    fake_stm32f4_hal
+)
+
+target_compile_options(test_stm32f4_sx128x_port PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME stm32f4_sx128x_port_tests
+    COMMAND test_stm32f4_sx128x_port
+)
+
+add_executable(test_stm32f401_link_composition
+    tests/test_stm32f401_link_composition.c
+)
+
+target_include_directories(test_stm32f401_link_composition PRIVATE
+    tests/stubs
+    tests/support
+    ${RADIO_INCLUDE_DIRS}
+)
+
+target_link_libraries(test_stm32f401_link_composition PRIVATE
+    stm32f401_link_port_host
+    fake_stm32f4_hal
+)
+
+target_compile_options(test_stm32f401_link_composition PRIVATE
+    ${RADIO_WARNING_FLAGS}
+)
+
+add_test(
+    NAME stm32f401_link_composition_tests
+    COMMAND test_stm32f401_link_composition
+)
 
 add_test(NAME stm32f4_backend_tests COMMAND test_stm32f4_backend)
 add_test(NAME stm32f407_composition_tests COMMAND test_stm32f407_composition)

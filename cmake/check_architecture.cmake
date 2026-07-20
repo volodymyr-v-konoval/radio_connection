@@ -1,6 +1,10 @@
 file(GLOB_RECURSE RADIO_CORE_FILES
     "${PROJECT_ROOT}/src/radio/*.c"
     "${PROJECT_ROOT}/src/radio/*.h"
+    "${PROJECT_ROOT}/src/link/*.c"
+    "${PROJECT_ROOT}/src/link/*.h"
+    "${PROJECT_ROOT}/src/drivers/*.c"
+    "${PROJECT_ROOT}/src/drivers/*.h"
 )
 
 set(FORBIDDEN_PATTERNS
@@ -24,4 +28,4 @@ foreach(FILE_PATH IN LISTS RADIO_CORE_FILES)
     endforeach()
 endforeach()
 
-message(STATUS "Radio core dependency boundary check passed")
+message(STATUS "Radio, link, and driver dependency boundary check passed")
